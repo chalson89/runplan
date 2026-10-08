@@ -1,0 +1,489 @@
+openapi: 3.1.0
+info:
+  title: runplan API
+  version: 0.1.0
+  description: 마라톤 연습 루틴 생성기(런플랜) 화면이 서버에 바라는 일을 적은 계약. 서버 구현은 ex02부터.
+servers:
+  - url: http://localhost:3000
+
+paths:
+  /api/plans:
+    get:
+      operationId: listPlans
+      summary: 플랜 목록 (홈)
+      responses:
+        '200':
+          description: 플랜 배열
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Plan'
+
+  /api/plans/{planId}:
+    get:
+      operationId: getPlan
+      summary: 플랜 상세 + 주차별 일정 (/plan/[id])
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 플랜 상세
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlanDetail'
+        '404':
+          description: NOT_FOUND · 플랜을 찾을 수 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/routines:
+    get:
+      operationId: listRoutines
+      summary: 내 루틴 목록 (/records, 최신순)
+      responses:
+        '200':
+          description: 내 루틴 목록
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RoutineSummary'
+        '401':
+          description: UNAUTHORIZED · 로그인이 필요함
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      operationId: createRoutine
+      summary: 루틴 만들기 (AC-01)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoutineIn'
+      responses:
+        '201':
+          description: 만든 루틴
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Routine'
+              examples:
+                ac01:
+                  summary: AC-01 10K 루틴 (8주, 진행률 0/40)
+                  value:
+                    id: '1'
+                    planId: 10k-novice
+                    start: '2026-10-05'
+                    from: '2026-10-05'
+                    form:
+                      planId: 10k-novice
+                      ability: 3
+                      age: 30
+                      height: 170
+                      weight: 65
+                      time: 저녁
+                    done: []
+                    progress:
+                      done: 0
+                      total: 40
+                      pct: 0
+        '401':
+          description: UNAUTHORIZED · 로그인이 필요함
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: |
+            INVALID_INPUT · 빠졌거나 규칙에 어긋난 칸 중 폼 순서로 첫 번째 하나를 안내함
+              - planId (빠짐 · 위반) → 목표 거리를 선택하세요
+              - ability (빠짐 · 위반) → 현재 수준을 선택하세요
+              - age · height · weight 빠짐 → 나이 · 키 · 몸무게를 모두 입력하세요
+              - age 위반 → 나이는 10~90 사이 숫자로 입력하세요
+              - height 위반 → 키는 100~230 사이 숫자로 입력하세요
+              - weight 위반 → 몸무게는 30~200 사이 숫자로 입력하세요
+              - time (빠짐 · 위반) → 운동 시간대를 선택하세요
+            LEVEL_TOO_LOW · 수준 부족 안내 (lib/plans.js checkPrereq의 msg · recId를 message · recPlanId로 돌려줌)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                ac05:
+                  summary: AC-05 풀코스 · 연속 3km
+                  value:
+                    code: LEVEL_TOO_LOW
+                    message: 풀코스는 연속 10km 이상 달릴 수 있어야 함 — 10K를 권장함
+                    recPlanId: 10k-walkrun
+
+  /api/routines/me:
+    get:
+      operationId: getMyRoutine
+      summary: 가장 최근에 만든 내 루틴 (/routine을 열 때)
+      responses:
+        '200':
+          description: 루틴
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Routine'
+        '401':
+          description: UNAUTHORIZED · 로그인이 필요함
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: NOT_FOUND · 루틴을 찾을 수 없음 (만든 루틴이 없음)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/routines/{routineId}:
+    get:
+      operationId: getRoutine
+      summary: 내 루틴 (/routine)
+      parameters:
+        - $ref: '#/components/parameters/RoutineId'
+      responses:
+        '200':
+          description: 루틴
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Routine'
+        '401':
+          description: UNAUTHORIZED · 로그인이 필요함
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: FORBIDDEN · 내 루틴이 아님
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: NOT_FOUND · 루틴을 찾을 수 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/routines/{routineId}/completions:
+    post:
+      operationId: addCompletion
+      summary: 완료 체크 (AC-04)
+      parameters:
+        - $ref: '#/components/parameters/RoutineId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key]
+              properties:
+                key:
+                  $ref: '#/components/schemas/DayKey'
+      responses:
+        '201':
+          description: 진행률
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Progress'
+              examples:
+                ac04:
+                  summary: AC-04 10K 루틴 첫 완료 → 1/40 (3%)
+                  value:
+                    done: 1
+                    total: 40
+                    pct: 3
+        '401':
+          description: UNAUTHORIZED · 로그인이 필요함
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: FORBIDDEN · 내 루틴이 아님
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: NOT_FOUND · 루틴을 찾을 수 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: ALREADY_DONE · 이미 완료한 훈련임
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: 'INVALID_INPUT · key 형식이 아님 (예: 3-1) / 휴식일은 완료 체크하지 않음 / 루틴을 만들기 전 날짜는 완료 체크하지 않음 / 아직 오지 않은 날은 완료 체크하지 않음'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/routines/{routineId}/completions/{key}:
+    delete:
+      operationId: removeCompletion
+      summary: 완료 취소
+      parameters:
+        - $ref: '#/components/parameters/RoutineId'
+        - name: key
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/DayKey'
+      responses:
+        '200':
+          description: 진행률
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Progress'
+        '401':
+          description: UNAUTHORIZED · 로그인이 필요함
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: FORBIDDEN · 내 루틴이 아님
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: NOT_FOUND · 루틴을 찾을 수 없음 / 완료 기록이 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/chat:
+    post:
+      operationId: chat
+      summary: 챗봇에게 묻기 (홈 우측 하단 챗봇, 로그인 필요 없음)
+      description: 대화 전체를 보내면 Claude Haiku 4.5의 답 한 개를 돌려줌. 시스템 프롬프트는 서버의 server/system_prompt.txt (비어 있으면 보내지 않음). 서버는 대화를 저장하지 않음
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatInput'
+      responses:
+        '200':
+          description: 챗봇 답
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatReply'
+        '422':
+          description: 'INVALID_INPUT · 메시지를 입력하세요 / 메시지는 2000자까지 보낼 수 있어요 / 대화가 너무 길어요. 새 대화로 시작하세요'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '502':
+          description: CHAT_FAILED · 챗봇이 답하지 못했어요. 잠시 뒤 다시 시도하세요 (API 키 없음 · Anthropic 오류)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  parameters:
+    RoutineId:
+      name: routineId
+      in: path
+      required: true
+      schema:
+        type: string
+
+  schemas:
+    DayKey:
+      type: string
+      description: 주차-요일번호 (예 3-1 = 3주차 화요일, 요일번호 0=월 ~ 6=일)
+      pattern: '^[1-9][0-9]*-[0-6]$'
+
+    Plan:
+      type: object
+      description: lib/plans.js PLANS 한 개의 칸 이름 그대로
+      required: [id, dist, level, goal, weeks, runDays, hours, longStart, longPeak, prereq, title, coach, summary, forWho, features]
+      properties:
+        id: { type: string }
+        dist: { type: string, enum: ['10k', half, full] }
+        level: { type: string, enum: [입문, 초급, 중급] }
+        goal: { type: string, enum: [완주, 기록] }
+        weeks: { type: integer }
+        runDays: { type: integer }
+        hours:
+          type: array
+          items: { type: number }
+          minItems: 2
+          maxItems: 2
+        longStart: { type: number }
+        longPeak: { type: number }
+        prereq: { type: number }
+        walkRun: { type: boolean }
+        tempo: { type: boolean }
+        halfRace: { type: boolean }
+        title: { type: string }
+        coach: { type: string }
+        summary: { type: string }
+        forWho:
+          type: array
+          items: { type: string }
+        features:
+          type: array
+          items: { type: string }
+
+    PlanDetail:
+      description: Plan에 schedule(buildSchedule 결과)을 더한 것
+      allOf:
+        - $ref: '#/components/schemas/Plan'
+        - type: object
+          required: [schedule]
+          properties:
+            schedule:
+              type: array
+              items:
+                $ref: '#/components/schemas/Week'
+
+    Week:
+      type: object
+      required: [n, kind, days, total]
+      properties:
+        n: { type: integer }
+        kind: { type: string, enum: [build, recovery, taper, race, sim] }
+        days:
+          type: array
+          items:
+            $ref: '#/components/schemas/Day'
+          minItems: 7
+          maxItems: 7
+        total: { type: number }
+
+    Day:
+      type: object
+      required: [type]
+      properties:
+        type: { type: string, enum: [rest, easy, mid, tempo, long, cross, shake, sim, race] }
+        km: { type: [number, 'null'] }
+
+    RoutineIn:
+      type: object
+      required: [planId, ability, age, height, weight, time]
+      properties:
+        planId: { type: string }
+        ability: { type: number, enum: [0, 3, 5, 10] }
+        age: { type: number, minimum: 10, maximum: 90 }
+        height: { type: number, minimum: 100, maximum: 230 }
+        weight: { type: number, minimum: 30, maximum: 200 }
+        time: { type: string, enum: [새벽, 아침, 점심, 저녁, 밤] }
+
+    Routine:
+      type: object
+      required: [id, planId, start, from, form, done, progress]
+      properties:
+        id: { type: string }
+        planId: { type: string }
+        start:
+          type: string
+          format: date
+          description: 루틴을 만든 날이 속한 주의 월요일 (YYYY-MM-DD)
+        from:
+          type: string
+          format: date
+          description: 루틴을 만든 날 (YYYY-MM-DD). 1주차에서 이 날 전 요일은 플랜에 없음(완료 체크 422, 진행률 총개수에서 빠짐)
+        form:
+          $ref: '#/components/schemas/RoutineIn'
+        done:
+          type: array
+          items:
+            $ref: '#/components/schemas/DayKey'
+        progress:
+          $ref: '#/components/schemas/Progress'
+
+    RoutineSummary:
+      description: 내 루틴 목록 한 줄 = Routine + 끝나는 날 · 상태 · 달린 거리
+      allOf:
+        - $ref: '#/components/schemas/Routine'
+        - type: object
+          required: [end, status, km]
+          properties:
+            end:
+              type: string
+              format: date
+              description: 루틴 마지막 날 (YYYY-MM-DD)
+            status:
+              type: string
+              enum: [active, done, stopped]
+              description: active = 가장 최근 루틴이고 기간 안 · done = 기간이 끝남 · stopped = 기간 안에 새 루틴으로 바뀜
+            km:
+              type: number
+              description: 완료한 날의 훈련 거리 합 (크로스트레이닝은 0)
+
+    Progress:
+      type: object
+      description: routineStats와 같은 계산 (휴식 · 루틴을 만들기 전 날 제외)
+      required: [done, total, pct]
+      properties:
+        done: { type: integer }
+        total: { type: integer }
+        pct: { type: integer }
+
+    ChatInput:
+      type: object
+      required: [messages]
+      properties:
+        messages:
+          type: array
+          minItems: 1
+          maxItems: 40
+          description: 처음은 user, user · assistant 번갈아
+          items:
+            type: object
+            required: [role, content]
+            properties:
+              role: { type: string, enum: [user, assistant] }
+              content: { type: string, minLength: 1, maxLength: 2000 }
+
+    ChatReply:
+      type: object
+      required: [reply]
+      properties:
+        reply: { type: string }
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string, enum: [NOT_FOUND, INVALID_INPUT, LEVEL_TOO_LOW, ALREADY_DONE, SERVER_ERROR, UNAUTHORIZED, FORBIDDEN, CHAT_FAILED] }
+        message: { type: string }
+        recPlanId:
+          type: string
+          description: 권장 플랜 id (LEVEL_TOO_LOW일 때만)
